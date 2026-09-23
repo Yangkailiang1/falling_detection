@@ -26,3 +26,7 @@ The standalone inference README reports the fixed evaluation protocol and its me
 ## Privacy and licensing
 
 This source snapshot excludes credentials, local databases, event archives, recorded footage, device screenshots, local-only mini program settings, and model weight files. No blanket license is included; reuse rights have not been specified. Third-party components and weights retain their own terms.
+
+## 演示视频
+
+[下载演示视频（MP4）](https://github.com/Yangkailiang1/falling_detection/releases/download/v1.0.0/fall-detection-demo.mp4)
