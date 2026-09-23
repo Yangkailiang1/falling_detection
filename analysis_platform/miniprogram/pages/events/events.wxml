@@ -1,0 +1,26 @@
+<view class="page">
+  <view class="empty" wx:if="{{!events.length && !loading}}">
+    <text>暂无告警记录</text>
+  </view>
+
+  <view class="event-card" wx:for="{{events}}" wx:key="event_id" bindtap="goDetail" data-id="{{item.event_id}}">
+    <view class="event-head">
+      <text class="risk-tag risk-{{item.risk.level}}">{{item.risk.level_name}}</text>
+      <text class="event-time">{{item.created_at_display}}</text>
+    </view>
+    <view class="event-body">
+      <image class="event-thumb" wx:if="{{item.capture_pic_url}}" src="{{item.capture_pic_url}}" mode="aspectFill" />
+      <view class="event-noimg" wx:else>📷</view>
+      <view class="event-text">
+        <text class="event-loc">📍 {{item.context.location || '家中'}}</text>
+        <text class="event-desc">{{item.context.description || '检测到跌倒事件'}}</text>
+      </view>
+    </view>
+    <view class="event-foot">
+      <text class="event-status {{item.status}}">{{statusText(item.status)}}</text>
+      <text class="arrow">›</text>
+    </view>
+  </view>
+
+  <view class="loading" wx:if="{{loading}}">加载中...</view>
+</view>

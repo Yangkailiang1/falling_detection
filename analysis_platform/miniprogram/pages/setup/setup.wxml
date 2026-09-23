@@ -1,0 +1,135 @@
+<view class="page">
+
+  <!-- 顶部横幅 + 步骤条 -->
+  <view class="hero">
+    <view class="hero-title">🔧 设备接入向导</view>
+    <view class="hero-sub">3 步完成配置，家人跌倒时微信即时告警</view>
+    <view class="steps">
+      <view class="step {{step >= 1 ? 'active' : ''}}">
+        <view class="step-dot">{{step > 1 ? '✓' : '1'}}</view>
+        <text>连接摄像头</text>
+      </view>
+      <view class="step-line {{step >= 2 ? 'done' : ''}}"></view>
+      <view class="step {{step >= 2 ? 'active' : ''}}">
+        <view class="step-dot">{{step > 2 ? '✓' : '2'}}</view>
+        <text>配置告警</text>
+      </view>
+      <view class="step-line {{step >= 3 ? 'done' : ''}}"></view>
+      <view class="step {{step >= 3 ? 'active' : ''}}">
+        <view class="step-dot">3</view>
+        <text>接入完成</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===================== 第 1 步: 连接摄像头 ===================== -->
+  <block wx:if="{{step === 1}}">
+    <!-- 引导: 下载萤石 App -->
+    <view class="card">
+      <view class="section-title">① 下载萤石 App，完成摄像头配网</view>
+      <view class="guide-text">
+        <text class="guide-item">1. 手机应用商店下载「萤石云视频」App</text>
+        <text class="guide-item">2. 注册账号，按 App 引导将摄像头连接到家中的 Wi-Fi</text>
+        <text class="guide-item">3. 摄像头在 App 中显示「在线」即可继续</text>
+      </view>
+      <view class="tip">摄像头配网由萤石 App 完成，本平台无需任何操作。</view>
+    </view>
+
+    <!-- 序列号 + 验证码 -->
+    <view class="card">
+      <view class="section-title">② 填写摄像头信息</view>
+      <view class="form-item">
+        <text class="label">设备序列号</text>
+        <input class="input" placeholder="如 BW0478764（萤石App 设备信息中查看）"
+               value="{{deviceSerial}}" bindinput="onSerial" />
+      </view>
+      <view class="form-item">
+        <text class="label">设备验证码</text>
+        <input class="input" placeholder="机身标签 / 包装盒上的 6 位验证码"
+               value="{{validateCode}}" bindinput="onValidateCode" />
+        <view class="tip">验证码用于将您的摄像头接入本平台（萤石开放平台 device/add）。</view>
+      </view>
+      <view class="btn-primary {{connecting ? 'disabled' : ''}}" bindtap="connectDevice">
+        {{connecting ? '正在连接验证取流…' : '🚀 连接摄像头并验证取流'}}
+      </view>
+      <view class="result-ok" wx:if="{{deviceOk}}">
+        ✅ 接入成功！平台已能从摄像头获取实时画面（取流地址已获取）
+      </view>
+      <view class="result-err" wx:if="{{deviceErr}}">⚠ {{deviceErr}}</view>
+    </view>
+  </block>
+
+  <!-- ===================== 第 2 步: 配置告警 ===================== -->
+  <block wx:if="{{step === 2}}">
+    <view class="card">
+      <view class="section-title">① 企业微信群机器人（推荐，免费）</view>
+      <view class="guide-text">
+        <text class="guide-item">1. 打开企业微信，创建一个群（可拉家属入群）</text>
+        <text class="guide-item">2. 群右上角「···」→ 群机器人 → 添加机器人</text>
+        <text class="guide-item">3. 复制机器人的 Webhook 地址，填入下方</text>
+      </view>
+      <view class="form-item">
+        <text class="label">Webhook Key / 地址</text>
+        <input class="input" placeholder="粘贴 webhook key 或完整地址"
+               value="{{wecomKey}}" bindinput="onWecomKey" />
+      </view>
+      <view class="btn-primary {{testing ? 'disabled' : ''}}" bindtap="sendTest">
+        {{testing ? '正在发送测试消息…' : '📨 发送测试消息'}}
+      </view>
+      <view class="result-ok" wx:if="{{wecomOk}}">
+        ✅ 测试消息已发送！请打开企业微信群确认收到「长辈守护·测试消息」
+      </view>
+      <view class="result-err" wx:if="{{wecomErr}}">⚠ {{wecomErr}}</view>
+      <view class="tip">告警触发后，跌倒信息将实时推送到该企业微信群（含抓拍图）。</view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">② 微信订阅消息（选填，直接发到个人微信）</view>
+      <view class="guide-text">
+        <text class="guide-item">授权后，跌倒告警将直接推送到您的微信「服务通知」</text>
+        <text class="guide-item">长期订阅：授权一次即可持续接收，无需反复授权</text>
+      </view>
+      <view class="btn-ghost" bindtap="authorizeNotify" wx:if="{{!subscribed}}">🔔 授权微信订阅通知</view>
+      <block wx:else>
+        <view class="result-ok">✅ 已授权微信订阅通知（长期有效）</view>
+        <view class="btn-ghost" bindtap="authorizeNotify">🔄 重新授权</view>
+      </block>
+    </view>
+  </block>
+
+  <!-- ===================== 第 3 步: 接入完成 + 历史告警 ===================== -->
+  <block wx:if="{{step === 3}}">
+    <view class="card done-card">
+      <view class="done-icon">🎉</view>
+      <view class="done-title">接入完成！</view>
+      <view class="done-sub">已连接摄像头，告警通道已就绪</view>
+      <view class="done-item">📹 摄像头：{{deviceSerial}}</view>
+      <view class="done-item" wx:if="{{wecomKey}}">💬 企业微信群：已配置</view>
+      <view class="done-item" wx:if="{{subscribed}}">🔔 微信订阅通知：已授权</view>
+    </view>
+
+    <!-- 历史跌倒告警 + 图片 -->
+    <view class="card">
+      <view class="section-title">📋 平台历史跌倒告警</view>
+      <view class="empty" wx:if="{{!events.length}}">暂无告警记录</view>
+      <view class="event-item" wx:for="{{events}}" wx:key="event_id"
+            bindtap="goDetail" data-id="{{item.event_id}}">
+        <image class="event-img" wx:if="{{item.capture_pic_url}}"
+               src="{{item.capture_pic_url}}" mode="aspectFill" />
+        <view class="event-noimg" wx:else>📷</view>
+        <view class="event-info">
+          <view class="event-top">
+            <text class="risk risk-{{item.risk_level}}">{{item.risk_level_name || '跌倒告警'}}</text>
+            <text class="event-time">{{item.time}}</text>
+          </view>
+          <view class="event-desc">{{item.description || '检测到跌倒事件'}}</view>
+          <view class="event-loc">📍 {{item.location || '家中'}}</view>
+        </view>
+        <text class="arrow">›</text>
+      </view>
+    </view>
+
+    <view class="btn-primary" bindtap="goHome">🏠 返回首页</view>
+  </block>
+
+</view>

@@ -1,0 +1,4 @@
+{
+  "desc": "长辈守护小程序",
+  "rules": [{ "action": "allow", "page": "*" }]
+}

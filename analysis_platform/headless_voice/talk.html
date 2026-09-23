@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Headless Voice Talk</title>
+<style>body{margin:0;background:#111}#player{width:1px;height:1px;overflow:hidden}</style>
+</head>
+<body>
+<div id="player"></div>
+<script>
+// === 无头语音客户端 - 对讲页面 ===
+// 复用 ezuikit-js 建立 EZVIZ 对讲通道（WebRTC），暴露 TTS 注入 / STT 捕获 API。
+// ezuikit.js 由 Node 守护进程注入（避免 file:// 加载限制）。
+// API 通过 window.__voice 暴露，Puppeteer 调用。
+
+// 1) 捕获对讲 PC（与 VoiceInteraction.vue 相同：monkey-patch addTrack/addTransceiver）
+window.__talkPC = null
+window.__talkPCs = []
+function __getTalkPC() {
+  return window.tts?.webrtcStuff?.pc || window.__talkPC
+}
+function __rememberTalkPC(pc) {
+  if (pc && !window.__talkPCs.includes(pc)) window.__talkPCs.push(pc)
+  window.__talkPC = pc
+}
+const __origAddTrack = RTCPeerConnection.prototype.addTrack
+const __origAddTransceiver = RTCPeerConnection.prototype.addTransceiver
+RTCPeerConnection.prototype.addTrack = function (...args) {
+  __rememberTalkPC(this)
+  return __origAddTrack.apply(this, args)
+}
+RTCPeerConnection.prototype.addTransceiver = function (...args) {
+  __rememberTalkPC(this)
+  return __origAddTransceiver.apply(this, args)
+}
+
+// 2) 静音轨道：TTS 播完后替换发送端，保持对讲会话存活（避免 replaceTrack(null) 触发 7003）
+let __silentTrack = null
+let __silentCtx = null
+function _getSilentAudioTrack() {
+  if (__silentTrack) return __silentTrack
+  __silentCtx = new AudioContext()
+  const dst = __silentCtx.createMediaStreamDestination()
+  __silentTrack = dst.stream.getAudioTracks()[0]
+  return __silentTrack
+}
+
+// 2b) 覆盖 getUserMedia: 返回静音音频轨道（而非假设备垃圾信号）。
+// 假麦克风(--use-fake-ui-for-media-stream)会向摄像头发送噪声 → 扬声器放大 → 回音环 [2026-08-13]
+if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+  const __origGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+  navigator.mediaDevices.getUserMedia = async (constraints) => {
+    const tracks = []
+    if (constraints && constraints.audio) {
+      const silent = _getSilentAudioTrack()
+      tracks.push(silent.clone())
+    }
+    // EZUIKit 某些版本会以 {audio:true, video:true} 建立对讲。返回
+    // 一个黑帧视频轨道可满足协商契约，但不会采集/播放本机画面。
+    if (constraints && constraints.video) {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = 2; canvas.height = 2
+        const ctx = canvas.getContext('2d'); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 2, 2)
+        const stream = canvas.captureStream(1)
+        if (stream.getVideoTracks()[0]) tracks.push(stream.getVideoTracks()[0])
+      } catch {}
+    }
+    return new MediaStream(tracks)
+  }
+}
+
+// 3) 当前播放源（供打断）
+let __activeSource = null
+// ezuikit.js 由 daemon 注入（UMD, 全局 window.EZUIKit）; EZUIKitPlayer 在 init() 里惰性解析
+
+// 4) STT 录制
+let __mediaRecorder = null
+let __recordChunks = []
+let __recorderStream = null
+let __listenCtx = null
+let __listenAnalyser = null
+let __listenData = null
+
+function __closeListenMeter() {
+  if (__listenCtx) { try { __listenCtx.close() } catch {} }
+  __listenCtx = null
+  __listenAnalyser = null
+  __listenData = null
+}
+
+window.__voice = {
+  ready: false,
+  player: null,
+  apiBase: '',  // 同源（由后端伺服 /headless-voice）; daemon 可覆盖为 http://127.0.0.1:5001
+  deviceSerial: '',
+  _lastTalkInit: 0,  // [2026-08-13] 对讲通道(重)建立时间戳, 用于 ensureTalk 过期强制重建
+  _initInProgress: false,  // [2026-08-13] init 进行中标志, 防 keepalive 与播报双重重建
+
+  // === 初始化：获取 token → 建播放器 → 对讲通道 ===
+  async init({ apiBase, deviceSerial } = {}) {
+    if (apiBase !== undefined) this.apiBase = apiBase
+    if (deviceSerial) this.deviceSerial = deviceSerial
+    if (this._initInProgress) return { ok: false, error: 'init already in progress' }
+    this._initInProgress = true
+    try {
+      // 清理上一次失效的通道，避免旧 PC/播放器让重建一直等首帧。
+      try { this.player?.stopTalk?.() } catch {}
+      try { this.player?.destroy?.() } catch {}
+      window.__talkPC = null
+      this.ready = false
+      const tokRes = await fetch(`${this.apiBase}/api/auth/token/ezuikit`, { timeout: 8000 })
+      const tokData = await tokRes.json()
+      const accessToken = tokData?.data?.accessToken || tokData?.accessToken || ''
+      const configuredSerial = tokData?.data?.deviceSerial || tokData?.deviceSerial || ''
+      if (configuredSerial) this.deviceSerial = configuredSerial
+      if (!accessToken) throw new Error('无 accessToken')
+      if (!this.deviceSerial) {
+        throw new Error('后端未返回有效设备序列号')
+      }
+
+      const el = document.getElementById('player')
+      el.innerHTML = ''
+      const Player = window.EZUIKit && window.EZUIKit.EZUIKitPlayer
+      const Events = Player ? Player.EVENTS : {}
+      if (!Player) throw new Error('EZUIKit.EZUIKitPlayer 不可用')
+      window.__voicePlayer = new Player({
+        id: 'player',
+        accessToken,
+        url: `ezopen://open.ys7.com/${this.deviceSerial}/1.hd.live`,
+        template: 'pcLive',
+        width: 1, height: 1,
+        audio: 1,
+        decoderType: 'v3',
+        plugin: ['talk'],
+        handleError: (err) => console.warn('[voice] EZUIKit error:', JSON.stringify(err)),
+      })
+      this.player = window.__voicePlayer
+      try {
+        const talkErrorEvent = Events.talkError
+        const talkSuccessEvent = Events.talkSuccess
+        if (talkErrorEvent) this.player.on(talkErrorEvent, (err) => console.error('[voice] talkError:', JSON.stringify(err)))
+        if (talkSuccessEvent) this.player.on(talkSuccessEvent, (info) => console.log('[voice] talkSuccess:', JSON.stringify(info)))
+      } catch (e) {
+        console.warn('[voice] talk event listener init failed:', e.message)
+      }
+
+      // 无头页面只负责摄像头麦克风回传 STT；本机扬声器必须静音，
+      // 否则会把摄像头回传音频/对讲回声再次播放到录制电脑。
+      const muteLocalPlayback = () => {
+        document.querySelectorAll('#player video, #player audio').forEach((media) => {
+          media.muted = true
+          media.volume = 0
+        })
+      }
+      muteLocalPlayback()
+      setTimeout(muteLocalPlayback, 500)
+      setTimeout(muteLocalPlayback, 2000)
+
+      // EZUIKit 的 startTalk 依赖播放器完成初始化。过早调用会得到一个
+      // 看似成功、随后立即断开的 PeerConnection，导致首次问询只能走超时。
+      // 等首帧（最多 12 秒）后再打开对讲；弱网不回调首帧时也给一次兜底调用。
+      await new Promise((resolve) => {
+        const firstFrame = Events.firstFrameDisplay
+        let done = false
+        const finish = () => { if (!done) { done = true; resolve() } }
+        try { if (firstFrame) this.player.on(firstFrame, finish) } catch {}
+        setTimeout(finish, 12000)
+      })
+      try { this.player.startTalk() } catch (e) { console.warn('[voice] startTalk:', e.message) }
+      await new Promise((resolve, reject) => {
+        const t0 = Date.now()
+        const iv = setInterval(() => {
+          const candidates = [
+            window.tts?.webrtcStuff?.pc,
+            window.__talkPC,
+            ...(window.__talkPCs || []),
+          ].filter(Boolean)
+          const pc = candidates.find((item) => {
+            const state = item.connectionState || item.iceConnectionState
+            const connected = state === 'connected' || state === 'completed'
+            const hasAudio = item.getSenders && item.getSenders().some(s => s.track?.kind === 'audio')
+            return connected && hasAudio
+          })
+          if (pc) {
+            window.__talkPC = pc
+            clearInterval(iv)
+            resolve()
+          } else if (Date.now() - t0 > 20000) {
+            clearInterval(iv)
+            const states = candidates.map((item) => ({
+              connectionState: item.connectionState,
+              iceConnectionState: item.iceConnectionState,
+              senders: item.getSenders ? item.getSenders().map(s => s.track?.kind || null) : [],
+            }))
+            reject(new Error('对讲音频通道未建立: ' + JSON.stringify(states)))
+          }
+        }, 200)
+      })
+      this.ready = true
+      this._lastTalkInit = Date.now()
+      console.log('[voice] talk channel READY')
+      this._initInProgress = false
+      return { ok: true }
+    } catch (e) {
+      console.error('[voice] init failed:', e.message)
+      this._initInProgress = false
+      return { ok: false, error: e.message }
+    }
+  },
+
+  // === [2026-08-13] 对讲通道自愈 ===
+  // EZVIZ 对讲通道闲置 ~20min 会被判定超时关闭(PC connectionState != connected) →
+  // 播报/STT 会失败。ensureTalk 检测到断开或超时(8min)就重建整个通道, 防止长时值守失声。
+  async ensureTalk() {
+    // 重建进行中 → 等待完成
+    if (this._initInProgress) {
+      const t0 = Date.now()
+      while (this._initInProgress && Date.now() - t0 < 25000) await new Promise((r) => setTimeout(r, 400))
+      const pc = window.__talkPC
+      return pc && pc.connectionState === 'connected' ? { ok: true } : { ok: false, error: 'rebuild timeout' }
+    }
+    const pc = window.__talkPC
+    const connected = pc && pc.connectionState === 'connected'
+    const stale = Date.now() - (this._lastTalkInit || 0) > 8 * 60 * 1000
+    if (connected && !stale) return { ok: true }
+    console.warn(`[voice] ensureTalk: 重建对讲通道 (connected=${!!connected} stale=${stale} pcState=${pc?.connectionState || 'none'})`)
+    this._lastTalkInit = Date.now()
+    return await this.init({ apiBase: this.apiBase, deviceSerial: this.deviceSerial })
+  },
+
+  // === TTS 注入摄像头扬声器（半双工互斥: 广播前先停麦, 避免回音） ===
+  async playTts(text) {
+    const _ensure = await this.ensureTalk()
+    if (!_ensure.ok) return { ok: false, error: 'ensureTalk: ' + (_ensure.error || 'failed') }
+    if (!this.ready || !window.__talkPC) return { ok: false, error: 'talk not ready' }
+    if (__mediaRecorder) await this.stopListening().catch(() => {})
+    this.stopCurrentPlay()
+    let sender = null
+    for (let i = 0; i < 25; i++) {
+      sender = window.__talkPC.getSenders().find(s => s.track && s.track.kind === 'audio')
+      if (sender) break
+      await new Promise((r) => setTimeout(r, 200))
+    }
+    if (!sender) return { ok: false, error: 'no audio sender' }
+
+    const readAudioStats = async () => {
+      let packets = 0
+      let bytes = 0
+      try {
+        const report = await sender.getStats()
+        report.forEach((stat) => {
+          if ((stat.kind === 'audio' || stat.mediaType === 'audio')) {
+            packets += Number(stat.packetsSent || 0)
+            bytes += Number(stat.bytesSent || 0)
+          }
+        })
+      } catch {}
+      return { packets, bytes }
+    }
+
+    try {
+      const resp = await fetch(this.apiBase + '/api/voice/tts.mp3?text=' + encodeURIComponent(text))
+      if (!resp.ok) throw new Error('TTS HTTP ' + resp.status)
+      const buf = await resp.arrayBuffer()
+      const ctx = new AudioContext()
+      await ctx.resume().catch(() => {})
+      if (ctx.state !== 'running') throw new Error('AudioContext 未运行')
+      const audioBuffer = await ctx.decodeAudioData(buf)
+      const source = ctx.createBufferSource()
+      source.buffer = audioBuffer
+      const dst = ctx.createMediaStreamDestination()
+      source.connect(dst)
+      const ttsTrack = dst.stream.getAudioTracks()[0]
+      const before = await readAudioStats()
+      await sender.replaceTrack(ttsTrack)
+      const result = await new Promise((resolve) => {
+        let finished = false
+        const finish = async (ok, error = '') => {
+          if (finished) return
+          finished = true
+          const after = await readAudioStats()
+          __activeSource = null
+          try { source.disconnect() } catch {}
+          ctx.close().catch(() => {})
+          sender.replaceTrack(_getSilentAudioTrack()).catch(() => {})
+          const packetDelta = Math.max(0, after.packets - before.packets)
+          const byteDelta = Math.max(0, after.bytes - before.bytes)
+          resolve({
+            ok: !!ok && packetDelta > 0 && byteDelta > 0,
+            audioSent: packetDelta > 0 && byteDelta > 0,
+            packetsSent: after.packets,
+            packetDelta,
+            byteDelta,
+            duration: audioBuffer.duration,
+            error: error || (packetDelta > 0 && byteDelta > 0 ? '' : '未检测到音频发送数据'),
+          })
+        }
+        source.onended = () => setTimeout(() => finish(true), 300)
+        source.start(0)
+        __activeSource = source
+        // 个别浏览器/长时间值守场景不会派发 source.onended；预计时长到点仍用
+        // WebRTC outbound-rtp 统计确认是否真的有音频发送，不能无条件判定成功。
+        setTimeout(() => finish(true), (audioBuffer.duration + 3) * 1000)
+      })
+      return result
+    } catch (e) {
+      console.error('[voice] playTts failed:', e.message)
+      return { ok: false, error: e.message }
+    }
+  },
+
+  stopCurrentPlay() {
+    if (__activeSource) { try { __activeSource.stop() } catch {} __activeSource = null }
+  },
+
+  // === 摄像头麦克风 STT 录制（远程音频轨道） ===
+  startListening() {
+    if (!window.__talkPC || __mediaRecorder) return false
+    const receiver = window.__talkPC.getReceivers().find(r => r.track?.kind === 'audio')
+    if (!receiver?.track) return false
+    __recorderStream = new MediaStream([receiver.track])
+    __recordChunks = []
+    __mediaRecorder = new MediaRecorder(__recorderStream)
+    __mediaRecorder.ondataavailable = (e) => { if (e.data.size) __recordChunks.push(e.data) }
+    __mediaRecorder.start()
+    // 只用于判断“老人已经说完”，录音内容仍完整交给后端讯飞 STT。
+    try {
+      __listenCtx = new AudioContext()
+      const source = __listenCtx.createMediaStreamSource(__recorderStream)
+      __listenAnalyser = __listenCtx.createAnalyser()
+      __listenAnalyser.fftSize = 512
+      source.connect(__listenAnalyser)
+      __listenData = new Uint8Array(__listenAnalyser.fftSize)
+    } catch (e) {
+      __closeListenMeter()
+    }
+    return true
+  },
+
+  async stopListening() {
+    if (!__mediaRecorder) return null
+    return await new Promise((resolve) => {
+      __mediaRecorder.onstop = () => {
+        const blob = new Blob(__recordChunks, { type: 'audio/webm' })
+        __recordChunks = []
+        __mediaRecorder = null
+        __recorderStream = null
+        __closeListenMeter()
+        resolve(blob)
+      }
+      __mediaRecorder.stop()
+    })
+  },
+
+  getState() {
+    return {
+      ready: this.ready,
+      talkPC: !!window.__talkPC,
+      player: !!this.player,
+      listening: !!__mediaRecorder,
+    }
+  },
+
+  // === 综合：录音(摄像头麦克风) → webm→PCM → 后端讯飞 STT → 返回文本 ===
+  async transcribe(seconds = 3) {
+    // [2026-08-13] 先确保对讲通道存活(断开则重建), 否则远端音频轨道不可用
+    const _ensure = await this.ensureTalk()
+    if (!_ensure.ok) return ''
+    this.stopCurrentPlay()  // 互斥2: 监听前先停任何广播（半双工: 麦开时不能广播）
+    if (!this.startListening()) return ''
+    const started = performance.now()
+    let speechSeen = false
+    let silenceSince = 0
+    // 说话后连续约 600ms 静音即结束；没有检测到声音时仍给足最大窗口。
+    while (performance.now() - started < seconds * 1000) {
+      let rms = 0
+      if (__listenAnalyser && __listenData) {
+        __listenAnalyser.getByteTimeDomainData(__listenData)
+        let sum = 0
+        for (const value of __listenData) { const x = (value - 128) / 128; sum += x * x }
+        rms = Math.sqrt(sum / __listenData.length)
+      }
+      if (rms >= 0.018) {
+        speechSeen = true
+        silenceSince = 0
+      } else if (speechSeen) {
+        if (!silenceSince) silenceSince = performance.now()
+        if (performance.now() - silenceSince >= 600) break
+      }
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    const blob = await this.stopListening()
+    if (!blob || blob.size < 500) return ''
+    try {
+      const arrayBuffer = await blob.arrayBuffer()
+      const ctx = new AudioContext({ sampleRate: 16000 })
+      const audioBuffer = await ctx.decodeAudioData(arrayBuffer)
+      const data = audioBuffer.getChannelData(0)
+      const int16 = new Int16Array(data.length)
+      for (let i = 0; i < data.length; i++) {
+        const s = Math.max(-1, Math.min(1, data[i]))
+        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+      }
+      ctx.close()
+      const resp = await fetch(`${this.apiBase}/api/voice/stt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'audio/pcm' },
+        body: int16.buffer,
+      })
+      const res = await resp.json()
+      return res?.data?.transcript || ''
+    } catch (e) {
+      console.error('[voice] transcribe failed:', e.message)
+      return ''
+    }
+  },
+}
+
+// 通知 daemon 页面已加载
+if (window.console) console.log('[voice] page script loaded')
+</script>
+</body>
+</html>
+

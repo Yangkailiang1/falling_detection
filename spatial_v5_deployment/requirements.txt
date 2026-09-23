@@ -1,0 +1,9 @@
+numpy
+opencv-python
+librosa>=0.10
+imageio-ffmpeg>=0.6
+ultralytics==8.4.14
+torch==2.11.0
+torchvision
+timm>=0.9.16
+einops>=0.7.0

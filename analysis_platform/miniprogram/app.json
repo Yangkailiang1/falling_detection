@@ -1,0 +1,27 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/bind/bind",
+    "pages/setup/setup",
+    "pages/events/events",
+    "pages/events/detail",
+    "pages/events/media",
+    "pages/camera/camera"
+  ],
+  "window": {
+    "navigationBarTitleText": "长辈守护",
+    "navigationBarBackgroundColor": "#1a1a3a",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5f6fa"
+  },
+  "tabBar": {
+    "color": "#8a8fa8",
+    "selectedColor": "#5b8cff",
+    "list": [
+      { "pagePath": "pages/index/index", "text": "首页" },
+      { "pagePath": "pages/events/events", "text": "告警" }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

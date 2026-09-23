@@ -1,0 +1,22 @@
+# ============================================
+# 萤石接入平台 - Python依赖
+# 对应文档: 二.V1.0 - 后端技术栈
+# ============================================
+Flask==3.1.0
+Flask-CORS==5.0.1
+requests==2.32.3
+python-dotenv==1.1.0
+pytest==8.3.5
+
+# 语音交互 [V7.3]
+edge-tts>=6.1        # TTS 引擎（微软，国内可用）
+websocket-client>=1.9 # 讯飞语音听写 WebSocket
+gtts>=2.5            # TTS 降级（Google，国内不可达）
+imageio-ffmpeg>=0.4  # 音频转码（测试用）
+
+# WorldAV model dependencies
+librosa>=0.10
+timm>=0.9.16
+einops>=0.7
+ultralytics>=8.4
+torch>=2.6.0

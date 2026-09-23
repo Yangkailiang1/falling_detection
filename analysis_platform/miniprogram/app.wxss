@@ -1,0 +1,49 @@
+/* 长辈守护 — 全局样式 */
+page {
+  background: #f5f6fa;
+  font-size: 28rpx;
+  color: #2a2a3a;
+}
+
+.card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin: 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.05);
+}
+
+.btn-primary {
+  background: #5b8cff;
+  color: #fff;
+  border-radius: 12rpx;
+  padding: 20rpx 0;
+  text-align: center;
+  font-size: 30rpx;
+}
+
+.btn-primary.disabled {
+  background: #b8c4e8;
+}
+
+.btn-ghost {
+  border: 2rpx solid #5b8cff;
+  color: #5b8cff;
+  border-radius: 12rpx;
+  padding: 18rpx 0;
+  text-align: center;
+  font-size: 28rpx;
+  margin-top: 16rpx;
+}
+
+.risk-tag {
+  display: inline-block;
+  padding: 4rpx 16rpx;
+  border-radius: 8rpx;
+  font-size: 22rpx;
+  color: #fff;
+}
+
+.risk-I { background: #f56c6c; }
+.risk-II { background: #e6a23c; }
+.risk-III { background: #67c23a; }

@@ -1,0 +1,53 @@
+<view class="page" wx:if="{{event}}">
+  <!-- 头部 -->
+  <view class="header">
+    <view class="back" bindtap="goBack">‹ 返回</view>
+    <view class="header-title">现场画面</view>
+    <view class="header-right">{{event.risk.level_name || ''}}</view>
+  </view>
+
+  <!-- 事件摘要 -->
+  <view class="summary-card">
+    <view class="summary-time">{{event.created_at_display}}</view>
+    <view class="summary-row">
+      <text class="risk-tag risk-{{event.risk.level}}">{{event.risk.level}}级 {{event.risk.level_name}}</text>
+      <text class="summary-loc">📍 {{event.context.location || '家中'}}</text>
+    </view>
+    <view class="summary-desc">{{event.context.description || '检测到跌倒事件'}}</view>
+  </view>
+
+  <!-- 现场抓拍图 -->
+  <view class="card" wx:if="{{event.capture_pic_url}}">
+    <view class="section-title">📷 现场抓拍图</view>
+    <image wx:if="{{!imgError}}" class="capture-img" src="{{event.capture_pic_url}}" mode="widthFix" bindtap="previewImage" binderror="onCaptureError" />
+    <view wx:else class="img-error" bindtap="previewImage">
+      <text>图片加载失败，点击查看大图</text>
+    </view>
+  </view>
+
+  <!-- 现场视频 (问询时录制) -->
+  <view class="card" wx:if="{{event.video_url}}">
+    <view class="section-title">🎥 事件视频回放</view>
+    <video
+      class="video-player"
+      src="{{event.video_url}}"
+      controls
+      autoplay="{{false}}"
+      object-fit="contain"
+      show-center-play-btn
+      enable-progress-gesture
+    ></video>
+    <view class="video-tip">跌倒问询时自动录制的摄像头画面（推送企业微信的同一视频）</view>
+  </view>
+  <view class="card" wx:elif="{{event.capture_pic_url}}">
+    <view class="section-title">🎥 事件视频</view>
+    <view class="no-video">
+      <text>该事件未录制视频片段（仅推送了现场抓拍图）</text>
+    </view>
+  </view>
+
+  <!-- 操作 -->
+  <view class="card actions">
+    <view class="btn-primary" bindtap="goLive">🔴 查看实时画面（对讲）</view>
+  </view>
+</view>

@@ -1,0 +1,75 @@
+<view class="page">
+  <!-- 顶部横幅 -->
+  <view class="hero">
+    <view class="hero-title">👴 长辈守护</view>
+    <view class="hero-sub">跌倒智能监测 · 微信即时告警</view>
+  </view>
+
+  <!-- 3 步引导 -->
+  <view class="card">
+    <view class="section-title">3 步完成接入</view>
+    <view class="step">
+      <view class="step-num">1</view>
+      <view class="step-text">连接摄像头（序列号+验证码）</view>
+      <view class="step-status {{deviceBound ? 'ok' : ''}}">{{deviceBound ? '✓ 已连接' : '未连接'}}</view>
+    </view>
+    <view class="step">
+      <view class="step-num">2</view>
+      <view class="step-text">配置告警通道（企业微信/订阅）</view>
+      <view class="step-status {{subscribed || wecomConfigured ? 'ok' : ''}}">{{subscribed || wecomConfigured ? '✓ 已配置' : '未配置'}}</view>
+    </view>
+    <view class="step">
+      <view class="step-num">3</view>
+      <view class="step-text">完成！跌倒时微信自动提醒</view>
+    </view>
+  </view>
+
+  <!-- 微信订阅通知授权 (长期订阅: 授权一次持续接收告警) -->
+  <view class="card">
+    <view class="section-title">🔔 微信告警通知</view>
+    <view class="guide-text">
+      <text class="guide-item">授权后，跌倒告警将直接推送到您的微信「服务通知」</text>
+      <text class="guide-item">长期订阅：授权一次即可持续接收，无需反复授权</text>
+    </view>
+    <view class="btn-ghost" bindtap="authorizeNotify" wx:if="{{!subscribed}}">
+      🔔 授权微信订阅通知
+    </view>
+    <block wx:else>
+      <view class="result-ok">✅ 已开启微信订阅通知（长期有效）</view>
+      <view class="btn-ghost" bindtap="authorizeNotify">🔄 重新授权</view>
+    </block>
+  </view>
+
+  <!-- 操作 -->
+  <view class="card">
+    <view class="btn-primary" bindtap="goSetup" wx:if="{{!setupDone}}">
+      🚀 开始接入向导
+    </view>
+    <view class="btn-ghost" bindtap="goSetup" wx:else>
+      重新进行接入配置
+    </view>
+    <view class="btn-ghost" bindtap="goEvents" wx:if="{{setupDone}}">
+      查看历史告警
+    </view>
+  </view>
+
+  <!-- 设备状态 -->
+  <view class="card" wx:if="{{deviceSerial}}">
+    <view class="section-title">已连接设备</view>
+    <view class="device-row">
+      <text>{{deviceName || deviceSerial}}</text>
+      <text class="device-status {{deviceOnline ? 'online' : 'offline'}}">
+        {{deviceOnline ? '🟢 在线' : '🔴 离线'}}
+      </text>
+    </view>
+    <view class="btn-ghost" bindtap="goCamera">
+      📹 查看实时画面（对讲）
+    </view>
+  </view>
+
+  <!-- 调试信息: 授权错误/结果 (完整显示) -->
+  <view class="card debug-card" wx:if="{{authError || authResult}}">
+    <view class="debug-error" wx:if="{{authError}}">{{authError}}</view>
+    <view class="debug-result" wx:if="{{authResult}}">{{authResult}}</view>
+  </view>
+</view>

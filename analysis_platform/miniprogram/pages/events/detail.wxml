@@ -1,0 +1,74 @@
+<view class="page" wx:if="{{event}}">
+  <!-- 风险横幅 -->
+  <view class="risk-banner risk-{{event.risk.level}}">
+    <view class="risk-title">{{event.risk.level_name}} · 跌倒告警</view>
+    <view class="risk-time">{{event.created_at_display}}</view>
+  </view>
+
+  <!-- 现场抓拍大图 -->
+  <view class="card capture-card" wx:if="{{event.capture_pic_url}}">
+    <view class="section-title">📷 现场抓拍 <text class="capture-tip">点击查看大图</text></view>
+    <image wx:if="{{event.capture_img_src && !imgError}}" class="capture-img" src="{{event.capture_img_src}}" mode="aspectFill" bindtap="previewImage" binderror="onCaptureError" />
+    <view wx:elif="{{!event.capture_img_src}}" class="img-error">
+      <text>正在加载现场图片…</text>
+    </view>
+    <view wx:else class="img-error" bindtap="previewImage">
+      <text>图片加载失败，点击查看大图</text>
+    </view>
+  </view>
+
+  <!-- 骨骼着地分析 -->
+  <view class="card">
+    <view class="section-title">🦴 跌倒分析</view>
+    <view class="info-grid">
+      <view class="info-cell">
+        <text class="cell-label">着地部位</text>
+        <text class="cell-value cell-strong">{{event.touch_ground_label}}</text>
+      </view>
+      <view class="info-cell">
+        <text class="cell-label">发生地点</text>
+        <text class="cell-value">📍 {{event.context.location || '家中'}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 事件信息 -->
+  <view class="card">
+    <view class="section-title">📋 事件信息</view>
+    <view class="info-row"><text class="label">事件编号</text><text>{{event.event_id}}</text></view>
+    <view class="info-row"><text class="label">风险等级</text><text>{{event.risk.level}}级 {{event.risk.level_name}}</text></view>
+    <view class="info-row"><text class="label">检测置信度</text><text>{{event.detection.confidence}}</text></view>
+    <view class="info-row"><text class="label">检测设备</text><text>{{event.context.device_serial || '-'}}</text></view>
+  </view>
+
+  <!-- 医疗简报 -->
+  <view class="card" wx:if="{{event.medical_text}}">
+    <view class="section-title">📋 萤石大模型医疗简报</view>
+    <view class="report-recommend" wx:if="{{event.medical_recommend}}">
+      {{event.medical_recommend}}
+    </view>
+    <rich-text class="report-text" nodes="{{event.medical_html}}"></rich-text>
+  </view>
+
+  <!-- 操作 -->
+  <view class="card actions">
+    <view class="action-btn action-primary" bindtap="goMedia">
+      <text class="action-icon">📹</text>
+      <text class="action-title">现场画面</text>
+      <text class="action-sub">图片 · 视频回放</text>
+    </view>
+    <view class="action-btn action-primary" bindtap="goCamera">
+      <text class="action-icon">🔴</text>
+      <text class="action-title">实时画面</text>
+      <text class="action-sub">双向对讲</text>
+    </view>
+    <view class="action-btn" bindtap="confirmEvent">
+      <text class="action-icon">✅</text>
+      <text class="action-title">确认已处理</text>
+    </view>
+    <view class="action-btn action-danger" bindtap="markFalseAlarm">
+      <text class="action-icon">⚠️</text>
+      <text class="action-title">标记为误报</text>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,6 @@
+# Windows 小程序 API 独立虚拟环境依赖
+# py -3.11 -m venv .venv-mini
+# .\.venv-mini\Scripts\python.exe -m pip install -r requirements-mini-api.txt
+Flask==3.1.0
+requests==2.32.3
+python-dotenv==1.1.0

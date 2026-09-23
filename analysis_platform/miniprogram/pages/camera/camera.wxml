@@ -1,0 +1,23 @@
+<view class="page">
+  <view class="card">
+    <view class="title">📹 设备实时画面</view>
+    <view class="device-row">
+      <text>{{deviceSerial}}</text>
+      <text class="device-status {{deviceOnline ? 'online' : ''}}">{{deviceOnline ? '🟢 在线' : '🔴 离线'}}</text>
+    </view>
+    <view class="tip">点击下方按钮打开萤石播放器：实时预览、对讲、云台、截屏</view>
+  </view>
+
+  <view class="card actions">
+    <view class="btn-primary {{loading ? 'disabled' : ''}}" bindtap="openPlayer" wx:if="{{!loading}}">
+      🎬 打开实时画面（含对讲）
+    </view>
+    <view class="btn-primary disabled" wx:else>获取播放凭证中...</view>
+    <view class="error-text" wx:if="{{errorMsg}}">⚠ {{errorMsg}}</view>
+  </view>
+
+  <view class="card help-card">
+    <view class="title">对讲说明</view>
+    <view class="help-text">打开播放器后，点击"按住说话"即可与老人双向通话（需设备支持全双工对讲）。</view>
+  </view>
+</view>
