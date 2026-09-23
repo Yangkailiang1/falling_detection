@@ -17,8 +17,6 @@ Camera/audio input is processed by the care platform. Detected events are archiv
 3. Follow each component README for Python and Node dependencies and local ports. Do not expose development servers to the public network. The mini program needs a configured care API URL and a valid development app ID.
 4. Add the model checkpoints required by `spatial_v5_deployment/README.md` from their official or authorized sources.
 
-The demo video is not included in this source release.
-
 ## Evaluation reference
 
 The standalone inference README reports the fixed evaluation protocol and its metrics. These results apply to that specified test set and video audit, not to every deployment environment.
